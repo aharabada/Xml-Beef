@@ -259,12 +259,10 @@ namespace Xml_Beef
 			_value.Set(val.Value);
 		}
 
-		public this(StringView name, String val)
+		public this(StringView name, StringView val)
 		{
 			Name.Set(name);
-
-			if (!String.IsNullOrWhiteSpace(val))
-				Value = val;
+			Value.Set(val);
 		}
 
 		public void AsString(String OutStr)
@@ -305,7 +303,7 @@ namespace Xml_Beef
 		}
 
 		// Adds a value with a name and a value
-		public XmlAttribute Add(StringView name, String val = null)
+		public XmlAttribute Add(StringView name, StringView val = null)
 		{
 			XmlAttribute result = new .(name, val);
 			Add(result);
@@ -313,7 +311,7 @@ namespace Xml_Beef
 		}
 
 		// Retrieve the attribute with the given name (case insensitive), returns `null` when not found
-		public XmlAttribute Find(String name)
+		public XmlAttribute Find(StringView name)
 		{
 			for (int i = 0; i < Count; i++)
 				if (this.[Friend]mItems[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase))
@@ -324,7 +322,7 @@ namespace Xml_Beef
 		}
 
 		// Indicates if the list contains an attribute with the given name (case insensitive)
-		public bool HasAttribute(String name) => Find(name) != null;
+		public bool HasAttribute(StringView name) => Find(name) != null;
 
 		// Deletes an attribute given by name (case insensitive)
 		public void Remove(String name)
@@ -429,28 +427,91 @@ namespace Xml_Beef
 			ClearAndDeleteItems!(ChildNodes);
 		}
 
+		public bool Matches(StringView name, StringView attrName = "", StringView attrValue = "", XmlNodeType types = .Element)
+		{
+			if (!attrName.IsEmpty)
+			{
+				if (!TryGetAttribute(attrName, let attribute))
+				{
+					return false;
+				}
+
+				if (!attrName.IsEmpty && !attribute.Value.Equals(attrValue))
+				{
+					return false;
+				}
+			}
+
+			return (types == .None || types.HasFlag(NodeType)) && name.Equals(_name, true);
+		}
+
 		// Find a child node by its name
-		public XmlNode Find(String name, XmlNodeType types = .Element) => ChildNodes.Find(name, types);
+		public XmlNode Find(String name, XmlNodeType types = .Element, bool recursive = false) =>
+			Find(name, "", "", types, recursive);
 
 		// Find a child node by name and attribute name
-		public XmlNode Find(String name, String attrName, XmlNodeType types = .Element) =>
-			ChildNodes.Find(name, attrName, types);
+		public XmlNode Find(String name, String attrName, XmlNodeType types = .Element, bool recursive = false) =>
+			Find(name, attrName, "", types, recursive);
 
 		// Find a child node by name, attribute name and attribute value
-		public XmlNode Find(String name, String attrName, String attrValue, XmlNodeType types = .Element) =>
-			ChildNodes.Find(name, attrName, attrValue, types);
+		public XmlNode Find(StringView name, StringView attrName, StringView attrValue, XmlNodeType types = .Element, bool recursive = false)
+		{
+			if (recursive)
+			{
+				for (XmlNode node in EnumerateNodes(name, attrName, attrValue, types, recursive: true))
+				{
+					return node;
+				}
+
+				return null;
+			}
+			else
+			{
+				return ChildNodes.Find(name, attrName, attrValue, types);
+			}
+		}
 
 		// Return a list of child nodes with the given name and (optional) node types
 		public XmlNodeList FindNodes(String name, XmlNodeType types = .Element) => ChildNodes.FindNodes(name, types);
 
 		// Returns True if the attribute exists
-		public bool HasAttribute(String name) => AttributeList.HasAttribute(name);
+		public bool HasAttribute(StringView name) => AttributeList.HasAttribute(name);
 
 		// Returns True if a child node with that name exits
 		public bool HasChild(String name, XmlNodeType types = .Element) => ChildNodes.HasNode(name, types);
 
 		// Add a child node with an optional NodeType (default: ntElement)
 		public XmlNode AddChild(String name, XmlNodeType type = .Element) => ChildNodes.Add(name, type);
+
+		
+		/// Removes the node and its children from this node. Optionally deletes them.
+		public bool RemoveChild(XmlNode node, bool deleteNode = false)
+		{
+			if (node.Parent != this)
+			{
+				return false;
+			}
+
+			ChildNodes.Remove(node);
+
+			if (deleteNode)
+			{
+				delete node;
+			}
+
+			return true;
+		}
+		
+		/// Removes this node and its children from its parent. Optionally deletes them.
+		public bool RemoveFromParent(bool deleteNode = false)
+		{
+			if (Parent == null)
+				return false;
+
+			Parent.RemoveChild(this, deleteNode);
+
+			return true;
+		}
 
 		// Insert a child node at a specific position with a (optional) NodeType (default: ntElement)
 		public XmlNode InsertChild(String name, int pos, XmlNodeType type = .Element)
@@ -471,7 +532,7 @@ namespace Xml_Beef
 		}
 
 		// Setting a node attribute by attribute name and attribute value
-		public XmlNode SetAttribute(String name)
+		public XmlNode SetAttribute(StringView name)
 		{
 			XmlAttribute attr = AttributeList.Find(name);
 
@@ -479,12 +540,11 @@ namespace Xml_Beef
 				attr = AttributeList.Add(name);
 
 			attr.AttrType = .Flag;
-			attr.Name = name;
 			return this;
 		}
 
 		// Setting a node attribute flag by attribute name
-		public XmlNode SetAttribute(String name, String val)
+		public XmlNode SetAttribute(StringView name, StringView val)
 		{
 			XmlAttribute attr = AttributeList.Find(name);
 
@@ -492,13 +552,25 @@ namespace Xml_Beef
 				attr = AttributeList.Add(name);
 
 			attr.AttrType = .Value;
-			attr.Name = name;
-			attr.Value = val;
+			attr.Value.Set(val);
 			return this;
+		}
+		
+		// Retrieve the attribute with the given name (case insensitive), returns `null` when not found
+		public XmlAttribute GetAttribute(StringView name)
+		{
+			return AttributeList.Find(name);
+		}
+		
+		/// Retrieve the attribute with the given name (case insensitive), returns `true` when found.
+		public bool TryGetAttribute(StringView name, out XmlAttribute attribute)
+		{
+			attribute = AttributeList.Find(name);
+			return attribute != null;
 		}
 
 		// Setting the node text
-		public XmlNode SetText(String value)
+		public XmlNode SetText(StringView value)
 		{
 			_text.Set(value);
 			return this;
@@ -562,7 +634,7 @@ namespace Xml_Beef
 		public bool IsTextElement => (!String.IsNullOrWhiteSpace(_text)) && (!HasChildNodes);
 
 		// Attributes of a node, accessible by attribute name (case insensitive)
-		public String this[String name]
+		public StringView this[StringView name]
 		{
 			get
 			{
@@ -585,6 +657,89 @@ namespace Xml_Beef
 			get { return _text; }
 			set { _text.Set(value); }
 		}
+
+		
+		public NodeEnumerator EnumerateNodes(StringView name, XmlNodeType types = .Element, bool recursive = false)
+		{
+			return NodeEnumerator(this, name, "", "", types, recursive);
+		}
+		
+		public NodeEnumerator EnumerateNodes(StringView name, StringView attributeName, XmlNodeType types = .Element, bool recursive = false)
+		{
+			return NodeEnumerator(this, name, attributeName, "", types, recursive);
+		}
+		
+		public NodeEnumerator EnumerateNodes(StringView name, StringView attributeName, StringView attributeValue, XmlNodeType types = .Element, bool recursive = false)
+		{
+			return NodeEnumerator(this, name, attributeName, attributeValue, types, recursive);
+		}
+
+		public struct NodeEnumerator : IEnumerator<XmlNode>
+		{
+			private XmlNode _searchRoot;
+
+			private StringView _searchName;
+			private StringView _searchAttributeName;
+			private StringView _searchAttributeValue;
+			private XmlNodeType _types;
+			private bool _recursive;
+
+			private Queue<XmlNode> _searchQueue;
+
+			public XmlNode SearchRoot => _searchRoot;
+			public StringView SearchName => _searchName;
+			public XmlNodeType Types => _types;
+			public bool Recursive => _recursive;
+
+			public XmlNode Current { get; private set mut; }
+			
+			public this(XmlNode searchRoot, StringView searchName, StringView searchAttributeName, StringView searchAttributeValue, XmlNodeType types, bool recursive)
+			{
+				_searchRoot = searchRoot;
+
+				_searchName = searchName;
+				_searchAttributeName = searchAttributeName;
+				_searchAttributeValue = searchAttributeValue;
+				_types = types;
+				_recursive = recursive;
+
+				_searchQueue = new Queue<XmlNode>(_searchRoot.ChildNodes.GetEnumerator());
+
+				Current = null;
+			}
+
+			public Result<XmlNode> GetNext() mut
+			{
+				XmlNode match = null;
+
+				while (match == null && !_searchQueue.IsEmpty)
+				{
+					XmlNode nextNode = _searchQueue.PopFront();
+
+					if (nextNode.Matches(_searchName, _searchAttributeName, _searchAttributeValue, _types))
+					{
+						match = nextNode;
+					}
+
+					if (_recursive)
+					{
+						for (XmlNode node in nextNode.ChildNodes)
+						{
+							_searchQueue.Add(node);
+						}
+					}
+				}
+				
+				Current = match;
+				return Current != null ? Current : .Err;
+			}
+
+			public void Dispose()
+			{
+				delete _searchQueue;
+			}
+		}
+
 	}
 
 	public class XmlNodeList : List<XmlNode>
@@ -629,17 +784,16 @@ namespace Xml_Beef
 			tmp.Name = name;
 			return tmp;
 		}
-
+		
 		// Find a node by its name (case sensitive), returns NIL if no node is found
 		public XmlNode Find(String name, XmlNodeType types = .Element)
 		{
 			for (XmlNode node in this) {
-				if ((types == .None || types.HasFlag(node.NodeType)) && name.Equals(node.Name, .OrdinalIgnoreCase))
+				if (node.Matches(name, types: types))
 					return node;
 			}
 
-			XmlNode tmp = null;
-			return tmp;
+			return null;
 		}
 
 		// Same as Find(), returns a node by its name (case sensitive)
@@ -649,26 +803,22 @@ namespace Xml_Beef
 		public XmlNode Find(String name, String attrName, XmlNodeType types = .Element)
 		{
 			for (XmlNode node in this) {
-				if ((types == .None || types.HasFlag(node.NodeType)) && name.Equals(node.Name, .OrdinalIgnoreCase) &&
-					node.HasAttribute(attrName))
+				if (node.Matches(name, attrName, types: types))
 					return node;
 			}
 
-			XmlNode tmp = null;
-			return tmp;
+			return null;
 		}
 
 		// Find a node that as the given attribute name and value, returns NIL otherwise
-		public XmlNode Find(String name, String attrName, String attrValue, XmlNodeType types = .Element)
+		public XmlNode Find(StringView name, StringView attrName = "", StringView attrValue = "", XmlNodeType types = .Element)
 		{
 			for (XmlNode node in this) {
-				if ((types == .None || types.HasFlag(node.NodeType)) && name.Equals(node.Name, .OrdinalIgnoreCase) &&
-					node.HasAttribute(attrName) && attrValue.Equals(node[attrName], .OrdinalIgnoreCase))
+				if (node.Matches(name, attrName, attrValue, types))
 					return node;
 			}
 
-			XmlNode tmp = null;
-			return tmp;
+			return null;
 		}
 
 		// Return a list of child nodes with the given name and (optional) node types
@@ -678,7 +828,7 @@ namespace Xml_Beef
 			tmp.Document = _document;
 
 			for (XmlNode node in this) {
-				if ((types == .None || types.HasFlag(node.NodeType)) && name.Equals(node.Name, .OrdinalIgnoreCase)) {
+				if (node.Matches(name, types: types)) {
 					tmp.Parent = node.Parent;
 					tmp.Add(node);
 				}
@@ -769,10 +919,7 @@ namespace Xml_Beef
 		}
 
 		// XML declarations are stored in here as Attributes
-		public XmlNode Header
-		{
-			get { return _header; }
-		}
+		public XmlNode Header => _header;
 
 		// Set to True if all spaces and linebreaks should be included as a text node, same as doPreserve option
 		public bool PreserveWhitespace
@@ -812,7 +959,8 @@ namespace Xml_Beef
 
 		private void Parse(XmlStreamReader reader)
 		{
-			Clear();
+			Clear(keepHeader: true);
+
 			XmlNode parent = _root;
 			String line = scope .();
 
@@ -1216,12 +1364,16 @@ namespace Xml_Beef
 		}
 
 		// Deletes all nodes
-		public void Clear()
+		public void Clear(bool keepHeader = false)
 		{
-			if (_header != null && _header.Parent == null)
-				delete _header;
-			
-			_header = null;
+			if (!keepHeader)
+			{
+				if (_header != null && _header.Parent == null)
+					delete _header;
+
+				_header = null;
+			}
+
 			_documentElement = null; // Always owned by a parent, just unref
 			_root.Clear();
 		}
@@ -1255,7 +1407,7 @@ namespace Xml_Beef
 
 			if (_header["encoding"].IsEmpty) { // none specified then use UTF8 with DetectBom
 				reader = new .(stream, .UTF8, true, buffSize);
-			} else if (_header["encoding"].Equals("utf-8", .OrdinalIgnoreCase)) {
+			} else if (_header["encoding"].Equals("utf-8", true)) {
 				reader = new .(stream, .UTF8, false, buffSize);
 			} else {
 				reader = new .(stream, .ASCII, false, buffSize);
@@ -1297,7 +1449,7 @@ namespace Xml_Beef
 		{
 			StreamWriter writer;
 
-			if (_header["encoding"].Equals("utf-8", .OrdinalIgnoreCase)) {
+			if (_header["encoding"].Equals("utf-8", true)) {
 				writer = new .(stream, .UTF8, 4096);
 			} else {
 				writer = new .(stream, .ASCII, 4096);
@@ -1324,10 +1476,7 @@ namespace Xml_Beef
 
 		public Xml SaveToString(String outStr)
 		{
-			StringStream stream = new .();
-			SaveToStream(stream);
-			outStr.Set(stream.Content);
-			delete stream;
+			SaveToStream(scope StringStream(outStr, .Reference));
 			return this;
 		}
 		
